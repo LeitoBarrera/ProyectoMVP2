@@ -1,7 +1,7 @@
 # apps/studies/serializers.py
 from rest_framework import serializers
 
-from .models import Solicitud, Estudio, EstudioItem
+from .models import Solicitud, Estudio, EstudioItem, EstudioConsentimiento
 from apps.candidates.models import Candidato
 from apps.documents.serializers import DocumentoSerializer  # nested docs en items
 
@@ -82,3 +82,8 @@ class EstudioSerializer(serializers.ModelSerializer):
             data.pop("nivel_cualitativo", None)
 
         return data
+
+class EstudioConsentimientoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EstudioConsentimiento
+        fields = ["id", "tipo", "aceptado", "firmado_at", "firma"]

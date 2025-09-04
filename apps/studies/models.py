@@ -56,3 +56,25 @@ class EstudioItem(models.Model):
         self.save()
         self.estudio.recalcular()
 
+class ConsentimientoTipo(models.TextChoices):
+    GENERAL   = "GENERAL",   "Autorización de tratamiento de datos"
+    CENTRALES = "CENTRALES", "Consulta en centrales de riesgo"
+    ACADEMICO = "ACADEMICO", "Verificación académica"
+
+class EstudioConsentimiento(models.Model):
+    estudio = models.ForeignKey("Estudio", related_name="consentimientos", on_delete=models.CASCADE)
+    tipo = models.CharField(max_length=20, choices=ConsentimientoTipo.choices)
+    aceptado = models.BooleanField(default=False)
+    firmado_at = models.DateTimeField(null=True, blank=True)
+    firma = models.FileField(upload_to="firmas/", null=True, blank=True)  # PNG
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("estudio", "tipo")
+
+    def __str__(self):
+        return f"{self.estudio_id} - {self.tipo} - {'OK' if self.aceptado else 'PENDIENTE'}"
+

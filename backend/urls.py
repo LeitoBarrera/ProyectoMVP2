@@ -18,17 +18,23 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from apps.studies import geo_views
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
 
     # Auth (JWT)
     path("api/auth/", include("apps.accounts.urls")),
-    path("api/candidatos/", include("apps.candidates.urls")),  
+    path("api/candidatos/", include("apps.candidates.urls")),
 
     # API
     path("api/", include("apps.studies.urls")),
     path("api/", include("apps.documents.urls")),
+    path("api/", include("apps.notifications.urls")),  # <-- AÑADE ESTO
+    path("api/geo/departamentos/", geo_views.departamentos),
+    path("api/geo/municipios/", geo_views.municipios),
+
 ]
 
 if settings.DEBUG:

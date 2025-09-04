@@ -1,129 +1,126 @@
-    import { useEffect, useState } from "react";
-    import api from "../api/axios";
-    import ProgressBar from "../components/ProgressBar";
-    import { useNavigate } from "react-router-dom";
-    import FileUploader from "../components/FileUploader";
+// src/pages/CandidatoPortal.jsx
+import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState, useMemo } from "react";
+import api from "../api/axios";
+import ProgressBar from "../components/ProgressBar";
 
+export default function CandidatoPortal() {
+  const [estudio, setEstudio] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(true);
 
-    export default function CandidatoPortal() {
-    const [estudio, setEstudio] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [perfil, setPerfil] = useState(null);
-    const [guardando, setGuardando] = useState(false);
-    const nav = useNavigate();
-
-    
-    const fetchPerfil = async ()=>{
-    try{
-        const { data } = await api.get("/api/candidatos/me/");
-        setPerfil(data);
-    }catch{}
-    };
-
-    useEffect(()=>{
-    fetchEstudios();
-    fetchPerfil();
-    },[]); // eslint-disable-line
-
-    const guardarPerfil = async ()=>{
-    setGuardando(true);
-    await api.put("/api/candidatos/me/", perfil);
-    setGuardando(false);
-    };
-
-    const fetchEstudios = async () => {
-        try {
+  useEffect(() => {
+    (async () => {
+      try {
+        // Toma el primero (puedes filtrar por estado desde el backend si lo deseas)
         const { data } = await api.get("/api/estudios/");
-        if (Array.isArray(data) && data.length) {
-            setEstudio(data[0]);
-        } else {
-            setEstudio(null);
-        }
-        } catch (e) {
-        // token inválido, redirigir a login
-        localStorage.removeItem("token");
-        nav("/");
-        } finally {
+        setEstudio(Array.isArray(data) && data.length ? data[0] : null);
+      } catch {
+        setMsg("No se pudo cargar tu estudio.");
+      } finally {
         setLoading(false);
-        }
-    };
+      }
+    })();
+  }, []);
 
-    const firmar = async () => {
-        if (!estudio?.id) return;
-        await api.post(`/api/estudios/${estudio.id}/firmar_autorizacion/`);
-        await fetchEstudios();
-    };
+  const tabs = useMemo(
+    () => ([
+      { to: "bio",       label: "Biográficos", icon: "👤" },
+      { to: "academico", label: "Académico",   icon: "🎓" },
+      { to: "laboral",   label: "Laboral",     icon: "💼" },
+      { to: "docs",      label: "Documentos",  icon: "📄" },
+    ]),
+    []
+  );
 
-    useEffect(() => {
-        fetchEstudios();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+  const navClass = ({ isActive }) =>
+    [
+      "rounded-xl px-3 py-2 text-sm font-medium transition",
+      isActive
+        ? "bg-white/10 text-white shadow-inner"
+        : "text-white/70 hover:text-white hover:bg-white/5",
+    ].join(" ");
 
-    if (loading) return <div className="p-6">Cargando...</div>;
-    if (!estudio) return <div className="p-6">No hay estudios asignados.</div>;
+  return (
+    <div className="relative min-h-screen">
+      {/* Fondo a juego con el login */}
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(1200px_700px_at_25%_20%,rgba(255,255,255,0.08),transparent_60%),linear-gradient(180deg,#0b1220_0%,#0a0f1a_100%)]" />
 
-    return (
-        <div className="max-w-2xl mx-auto p-6 space-y-4">
-        <h1 className="text-xl font-semibold">Portal del Candidato</h1>
-
-        <div className="p-4 rounded-xl border bg-white">
-            <div className="flex items-center justify-between">
-            <span className="font-medium">Progreso del estudio</span>
-            <span className="text-sm text-gray-600">
-                {estudio.nivel_cualitativo ?? "N/D"}
-            </span>
+      <div className="mx-auto max-w-5xl p-6">
+        {/* Card principal */}
+        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md shadow-2xl">
+          {/* Header */}
+          <div className="flex flex-col gap-4 border-b border-white/10 p-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-white">
+                Portal del candidato
+              </h1>
+              <p className="mt-1 text-sm text-white/60">
+                Completa tu información y consulta el estado de tu estudio.
+              </p>
             </div>
-            <div className="mt-2">
-            <ProgressBar value={estudio.progreso || 0} />
-            </div>
 
-            <div className="mt-3 text-sm">
-            Autorización: {estudio.autorizacion_firmada ? "Firmada" : "Pendiente"}
-            </div>
-            {!estudio.autorizacion_firmada && (
-            <button
-                onClick={firmar}
-                className="mt-2 px-3 py-1.5 rounded bg-blue-600 text-white"
-            >
-                Firmar autorización
-            </button>
-            )}
-        </div>
-
-        <div className="p-4 rounded-xl border bg-white">
-        <h2 className="font-medium mb-2">Ítems</h2>
-        <ul className="space-y-3">
-            {(estudio.items || []).map((it) => (
-            <li key={it.id} className="text-sm border rounded p-3">
-                <div className="flex items-center justify-between">
-                <span className="font-medium">{it.tipo}</span>
-                <span className="text-gray-600">{it.estado}</span>
+            {/* Estado del estudio */}
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white/90">
+              {loading ? (
+                <div className="text-sm text-white/60">Cargando…</div>
+              ) : !estudio ? (
+                <div className="text-sm text-white/60">
+                  No tienes un estudio activo.
                 </div>
-                <div className="mt-2">
-                <FileUploader itemId={it.id} onUploaded={fetchEstudios} />
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">Estudio</span>
+                    <span className="rounded-lg bg-white/10 px-2 py-0.5 text-sm font-semibold">
+                      #{estudio.id}
+                    </span>
+                    {estudio.nivel_cualitativo && (
+                      <span className="rounded-lg bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-300">
+                        {estudio.nivel_cualitativo}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-white/60">
+                    Progreso:
+                    <span className="text-white/80">{estudio.progreso ?? 0}%</span>
+                  </div>
+                  <div className="pt-1">
+                    <ProgressBar value={estudio.progreso || 0} />
+                  </div>
                 </div>
-            </li>
+              )}
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <nav className="flex flex-wrap items-center gap-2 px-4 pt-4">
+            {tabs.map((t) => (
+              <NavLink key={t.to} to={t.to} className={navClass} end>
+                <span className="mr-1">{t.icon}</span>
+                {t.label}
+              </NavLink>
             ))}
-        </ul>
-        </div>
-        <div className="p-4 rounded-xl border bg-white">
-            <h2 className="font-medium mb-2">Mi información</h2>
-            {!perfil ? <div className="text-sm">Cargando...</div> : (
-                <div className="grid sm:grid-cols-2 gap-2 text-sm">
-                <input className="border rounded p-2" placeholder="Nombre" value={perfil.nombre||""} onChange={e=>setPerfil(s=>({...s,nombre:e.target.value}))}/>
-                <input className="border rounded p-2" placeholder="Apellido" value={perfil.apellido||""} onChange={e=>setPerfil(s=>({...s,apellido:e.target.value}))}/>
-                <input className="border rounded p-2" placeholder="Cédula" value={perfil.cedula||""} disabled />
-                <input className="border rounded p-2" placeholder="Email" value={perfil.email||""} disabled />
-                <input className="border rounded p-2" placeholder="Celular" value={perfil.celular||""} onChange={e=>setPerfil(s=>({...s,celular:e.target.value}))}/>
-                <input className="border rounded p-2" placeholder="Ciudad de residencia" value={perfil.ciudad_residencia||""} onChange={e=>setPerfil(s=>({...s,ciudad_residencia:e.target.value}))}/>
-                <div className="sm:col-span-2">
-                    <button onClick={guardarPerfil} className="px-3 py-1.5 rounded bg-blue-600 text-white" disabled={guardando}>
-                    {guardando ? "Guardando..." : "Guardar"}
-                    </button>
-                </div>
-                </div>
-            )}
+          </nav>
+
+          {/* Mensajes */}
+          {msg && (
+            <div className="mx-4 mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-2 text-sm text-amber-200">
+              {msg}
             </div>
+          )}
+
+          {/* Contenido */}
+          <div className="p-4 md:p-6">
+            <Outlet context={{ studyId: estudio?.id || null }} />
+          </div>
         </div>
-    );
-    }
+
+        {/* Pie (opcional) */}
+        <div className="mt-6 text-center text-xs text-white/50">
+          © {new Date().getFullYear()} eConfia · Seguridad & verificación
+        </div>
+      </div>
+    </div>
+  );
+}

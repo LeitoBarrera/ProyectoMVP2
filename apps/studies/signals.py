@@ -3,7 +3,7 @@ from django.dispatch import receiver
 from django.core.mail import send_mail
 from django.conf import settings
 
-from .models import Solicitud, EstudioItem
+from .models import Solicitud, EstudioItem, Estudio, EstudioConsentimiento, ConsentimientoTipo
 
 @receiver(post_save, sender=Solicitud)
 def notificar_solicitud_creada(sender, instance: Solicitud, created, **kwargs):
@@ -37,3 +37,10 @@ def notificar_item_validado(sender, instance: EstudioItem, created, **kwargs):
             destinatarios.append(solicitud.candidato.email)
         if destinatarios:
             send_mail(asunto, mensaje, settings.DEFAULT_FROM_EMAIL if hasattr(settings,"DEFAULT_FROM_EMAIL") else "no-reply@example.com", destinatarios)
+
+@receiver(post_save, sender=Estudio)
+def crear_consentimientos(sender, instance, created, **kwargs):
+    if not created:
+        return
+    for t in (ConsentimientoTipo.GENERAL, ConsentimientoTipo.CENTRALES, ConsentimientoTipo.ACADEMICO):
+        EstudioConsentimiento.objects.get_or_create(estudio=instance, tipo=t)
