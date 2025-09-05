@@ -1,9 +1,11 @@
 # apps/studies/serializers.py
 from rest_framework import serializers
 
-from .models import Solicitud, Estudio, EstudioItem, EstudioConsentimiento
+from .models import Solicitud, Estudio, EstudioItem, EstudioConsentimiento, Academico, Laboral
 from apps.candidates.models import Candidato
 from apps.documents.serializers import DocumentoSerializer  # nested docs en items
+import os, mimetypes
+
 
 
 # ---- Candidato embebido en creación de Solicitud ----
@@ -87,3 +89,31 @@ class EstudioConsentimientoSerializer(serializers.ModelSerializer):
     class Meta:
         model = EstudioConsentimiento
         fields = ["id", "tipo", "aceptado", "firmado_at", "firma"]
+
+class AcademicoSerializer(serializers.ModelSerializer):
+    # permitir subir archivo opcionalmente
+    archivo = serializers.FileField(required=False, allow_null=True)
+
+    class Meta:
+        model = Academico
+        fields = "__all__"
+        read_only_fields = ("candidato",)  # lo seteamos en perform_create/perform_update
+
+
+class LaboralSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Laboral
+        fields = [
+            "id", "estudio", "candidato",
+            "empresa", "cargo", "telefono", "email_contacto", "direccion",
+            "ingreso", "retiro", "motivo_retiro",
+            "tipo_contrato", "jefe_inmediato",
+            "verificada_camara", "volveria_contratar",
+            "concepto",
+            "certificado",
+            "creado",
+        ]
+        read_only_fields = ["id", "candidato", "creado"]
+        extra_kwargs = {
+            "estudio": {"required": False},   # 👈 clave
+        }

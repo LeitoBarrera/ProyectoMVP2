@@ -61,7 +61,7 @@ class ConsentimientoTipo(models.TextChoices):
     CENTRALES = "CENTRALES", "Consulta en centrales de riesgo"
     ACADEMICO = "ACADEMICO", "Verificación académica"
 
-class EstudioConsentimiento(models.Model):
+class EstudioConsentimiento(models.Model):  
     estudio = models.ForeignKey("Estudio", related_name="consentimientos", on_delete=models.CASCADE)
     tipo = models.CharField(max_length=20, choices=ConsentimientoTipo.choices)
     aceptado = models.BooleanField(default=False)
@@ -77,4 +77,93 @@ class EstudioConsentimiento(models.Model):
 
     def __str__(self):
         return f"{self.estudio_id} - {self.tipo} - {'OK' if self.aceptado else 'PENDIENTE'}"
+    
+
+class Academico(models.Model):
+    TIPO_ARCHIVO = (
+        ("DIPLOMA", "Diploma"),
+        ("ACTA", "Acta de grado"),
+        ("OTRO", "Otro"),
+    )
+
+    estudio = models.ForeignKey(
+        "studies.Estudio", related_name="academicos",
+        on_delete=models.CASCADE, null=True, blank=True
+    )
+    candidato = models.ForeignKey(
+        "candidates.Candidato", related_name="academicos",
+        on_delete=models.CASCADE
+    )
+
+    # ▼▼▼ CAMPOS NUEVOS ▼▼▼
+    grado = models.CharField(max_length=120, blank=True, default="")
+    acta_numero = models.CharField(max_length=120, blank=True, default="")
+    folio_numero = models.CharField(max_length=120, blank=True, default="")
+    libro_registro = models.CharField(max_length=120, blank=True, default="")
+    rector = models.CharField(max_length=255, blank=True, default="")
+    secretario = models.CharField(max_length=255, blank=True, default="")
+    concepto = models.TextField(blank=True, default="")
+    # ▲▲▲ CAMPOS NUEVOS ▲▲▲
+
+    titulo = models.CharField(max_length=255)
+    institucion = models.CharField(max_length=255)
+    fecha_graduacion = models.DateField(null=True, blank=True)
+    ciudad = models.CharField(max_length=120, blank=True)
+    presenta_original = models.BooleanField(default=False)
+
+    archivo = models.FileField(upload_to="academicos/", null=True, blank=True)
+    archivo_tipo = models.CharField(max_length=10, choices=TIPO_ARCHIVO, default="DIPLOMA")
+
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado"]
+
+    def __str__(self):
+        return f"{self.titulo} · {self.institucion}"
+
+
+class Laboral(models.Model):
+    TIPO_CONTRATO = (
+        ("FIJO", "Fijo"),
+        ("INDEFINIDO", "Indefinido"),
+        ("OBRA", "Obra/Labor"),
+        ("OTRO", "Otro"),
+    )
+
+    estudio = models.ForeignKey(
+        "studies.Estudio", related_name="laborales",
+        on_delete=models.CASCADE, null=True, blank=True
+    )
+    candidato = models.ForeignKey(
+        "candidates.Candidato", related_name="laborales",
+        on_delete=models.CASCADE
+    )
+
+    empresa = models.CharField(max_length=255)
+    cargo = models.CharField(max_length=255, blank=True)
+    telefono = models.CharField(max_length=100, blank=True)
+    email_contacto = models.EmailField(blank=True)
+    direccion = models.CharField(max_length=255, blank=True)
+
+    ingreso = models.DateField(null=True, blank=True)
+    retiro = models.DateField(null=True, blank=True)
+    motivo_retiro = models.CharField(max_length=255, blank=True)
+
+    tipo_contrato = models.CharField(max_length=12, choices=TIPO_CONTRATO, blank=True)
+    jefe_inmediato = models.CharField(max_length=255, blank=True)
+    verificada_camara = models.BooleanField(default=False)
+    volveria_contratar = models.BooleanField(null=True, blank=True)  # Sí/No/No sabe
+
+    concepto = models.TextField(blank=True)
+
+    certificado = models.FileField(upload_to="laborales/", null=True, blank=True)
+
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado"]
+
+    def __str__(self):
+        return f"{self.empresa} · {self.cargo or ''}".strip()
 

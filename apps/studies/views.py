@@ -2,7 +2,7 @@
 from io import BytesIO
 import base64
 from django.core.files.base import ContentFile
-
+from django.db import IntegrityError
 from django.http import FileResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -11,7 +11,7 @@ from django.core.mail import send_mail
 from django.utils.crypto import get_random_string
 from django.contrib.auth import get_user_model
 from django.db import transaction
-
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -22,12 +22,13 @@ from reportlab.pdfgen import canvas
 
 from apps.notifications.models import Notificacion
 
-from .models import Solicitud, Estudio, EstudioItem, ItemTipo,EstudioConsentimiento, ConsentimientoTipo
+from .models import Solicitud, Estudio, EstudioItem, ItemTipo,EstudioConsentimiento, ConsentimientoTipo,Academico,Laboral
 from .serializers import (
     SolicitudCreateSerializer,
     EstudioSerializer,
     EstudioItemSerializer,
-    EstudioConsentimientoSerializer
+    EstudioConsentimientoSerializer,
+    LaboralSerializer, AcademicoSerializer,
 )
 
 
@@ -347,124 +348,129 @@ class EstudioViewSet(viewsets.ReadOnlyModelViewSet):
         estudio.recalcular()
         return Response(EstudioItemSerializer(item).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["post"])
-    def validar_masivo(self, request, pk=None):
-        if getattr(request.user, "rol", None) not in ("ANALISTA", "ADMIN"):
-            return Response({"detail": "Sin permiso."}, status=status.HTTP_403_FORBIDDEN)
+        @action(detail=True, methods=["post"])
+        def validar_masivo(self, request, pk=None):
+                if getattr(request.user, "rol", None) not in ("ANALISTA", "ADMIN"):
+                    return Response({"detail": "Sin permiso."}, status=status.HTTP_403_FORBIDDEN)
 
-        estudio = self.get_object()
-        payload = request.data.get("items", [])
-        updated = 0
+                estudio = self.get_object()
+                payload = request.data.get("items", [])
+                updated = 0
 
-        for it in payload:
-            iid = it.get("id")
-            if not iid:
-                continue
-            try:
-                item = estudio.items.get(id=iid)
-            except EstudioItem.DoesNotExist:
-                continue
+                for it in payload:
+                    iid = it.get("id")
+                    if not iid:
+                        continue
+                    try:
+                        item = estudio.items.get(id=iid)
+                    except EstudioItem.DoesNotExist:
+                        continue
 
-            estado = it.get("estado", "VALIDADO")
-            puntaje = float(it.get("puntaje", 0) or 0)
-            comentario = it.get("comentario", "")
+                    estado = it.get("estado", "VALIDADO")
+                    puntaje = float(it.get("puntaje", 0) or 0)
+                    comentario = it.get("comentario", "")
 
-            if estado == "HALLAZGO":
-                item.estado = "HALLAZGO"
-                item.puntaje = puntaje
-                item.comentario = comentario
-                item.save()
-            else:
-                item.marcar_validado(puntaje=puntaje)
-                if comentario:
-                    item.comentario = comentario
-                    item.save()
+                    if estado == "HALLAZGO":
+                        item.estado = "HALLAZGO"
+                        item.puntaje = puntaje
+                        item.comentario = comentario
+                        item.save()
+                    else:
+                        item.marcar_validado(puntaje=puntaje)
+                        if comentario:
+                            item.comentario = comentario
+                            item.save()
 
-            updated += 1
+                    updated += 1
 
-        estudio.recalcular()
-        return Response({"ok": True, "updated": updated}, status=status.HTTP_200_OK)
+                estudio.recalcular()
+                return Response({"ok": True, "updated": updated}, status=status.HTTP_200_OK)
+
+
         @action(detail=True, methods=["get"])
         def consentimientos(self, request, pk=None):
-            est = self.get_object()
-            data = EstudioConsentimientoSerializer(est.consentimientos.all(), many=True, context={"request": request}).data
-            return Response(data)
+                est = self.get_object()
+                data = EstudioConsentimientoSerializer(
+                    est.consentimientos.all(), many=True, context={"request": request}
+                ).data
+                return Response(data)
+
 
         @action(detail=True, methods=["post"])
         def firmar_consentimiento(self, request, pk=None):
-            """
-            Body JSON:
-            {
-            "tipo": "GENERAL" | "CENTRALES" | "ACADEMICO",
-            "acepta": true,
-            "firma_base64": "data:image/png;base64,iVBORw0K..."  (obligatoria si acepta)
-            "user_agent": "...",  (opcional)
-            }
-            Solo CANDIDATO puede firmar el estudio que le pertenece.
-            """
-            est = self.get_object()
-            # Solo el candidato dueño
-            if getattr(request.user, "rol", None) != "CANDIDATO" or est.solicitud.candidato.email != request.user.email:
-                return Response({"detail": "Sin permiso."}, status=403)
+                """
+                Body JSON:
+                {
+                "tipo": "GENERAL" | "CENTRALES" | "ACADEMICO",
+                "acepta": true,
+                "firma_base64": "data:image/png;base64,iVBORw0K..."  (obligatoria si acepta)
+                "user_agent": "...",  (opcional)
+                }
+                Solo CANDIDATO puede firmar el estudio que le pertenece.
+                """
+                est = self.get_object()
+                # Solo el candidato dueño
+                if getattr(request.user, "rol", None) != "CANDIDATO" or est.solicitud.candidato.email != request.user.email:
+                    return Response({"detail": "Sin permiso."}, status=403)
 
-            tipo = request.data.get("tipo")
-            acepta = bool(request.data.get("acepta"))
-            firma_b64 = request.data.get("firma_base64", "")
-            ua = request.data.get("user_agent", "")
-            # IP del request
-            ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR")
+                tipo = request.data.get("tipo")
+                acepta = bool(request.data.get("acepta"))
+                firma_b64 = request.data.get("firma_base64", "")
+                ua = request.data.get("user_agent", "")
+                # IP del request
+                ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR")
 
-            if tipo not in {t.value for t in ConsentimientoTipo}:
-                return Response({"detail": "Tipo inválido."}, status=400)
+                if tipo not in {t.value for t in ConsentimientoTipo}:
+                    return Response({"detail": "Tipo inválido."}, status=400)
 
-            cons = EstudioConsentimiento.objects.filter(estudio=est, tipo=tipo).first()
-            if not cons:
-                return Response({"detail": "Consentimiento no encontrado."}, status=404)
+                cons = EstudioConsentimiento.objects.filter(estudio=est, tipo=tipo).first()
+                if not cons:
+                    return Response({"detail": "Consentimiento no encontrado."}, status=404)
 
-            if acepta:
-                if not firma_b64.startswith("data:image"):
-                    return Response({"detail": "Se requiere la imagen de la firma."}, status=400)
-                # parse base64
-                try:
-                    header, b64data = firma_b64.split(",", 1)
-                except ValueError:
-                    return Response({"detail": "Formato de firma inválido."}, status=400)
-                ext = "png"
-                content = ContentFile(base64.b64decode(b64data), name=f"firma_{est.id}_{tipo}.{ext}")
-                cons.firma = content
-                cons.aceptado = True
-                cons.firmado_at = timezone.now()
+                if acepta:
+                    if not firma_b64.startswith("data:image"):
+                        return Response({"detail": "Se requiere la imagen de la firma."}, status=400)
+                    # parse base64
+                    try:
+                        header, b64data = firma_b64.split(",", 1)
+                    except ValueError:
+                        return Response({"detail": "Formato de firma inválido."}, status=400)
+                    ext = "png"
+                    content = ContentFile(base64.b64decode(b64data), name=f"firma_{est.id}_{tipo}.{ext}")
+                    cons.firma = content
+                    cons.aceptado = True
+                    cons.firmado_at = timezone.now()
+                    cons.user_agent = ua or None
+                    cons.ip = ip or None
+                    cons.save()
+
+                    # Si ya se firmaron los 3, marcamos autorizacion_firmada en Estudio
+                    total = est.consentimientos.count()
+                    ok = est.consentimientos.filter(aceptado=True).count()
+                    if total and ok == total:
+                        est.autorizacion_firmada = True
+                        if hasattr(est, "autorizacion_fecha"):
+                            est.autorizacion_fecha = timezone.now()
+                        est.save(update_fields=["autorizacion_firmada", "autorizacion_fecha"] if hasattr(est, "autorizacion_fecha") else ["autorizacion_firmada"])
+
+                    return Response({"ok": True})
+
+                # Si NO acepta:
+                cons.aceptado = False
+                cons.firma = None
+                cons.firmado_at = None
                 cons.user_agent = ua or None
                 cons.ip = ip or None
                 cons.save()
-
-                # Si ya se firmaron los 3, marcamos autorizacion_firmada en Estudio
-                total = est.consentimientos.count()
-                ok = est.consentimientos.filter(aceptado=True).count()
-                if total and ok == total:
-                    est.autorizacion_firmada = True
-                    if hasattr(est, "autorizacion_fecha"):
-                        est.autorizacion_fecha = timezone.now()
-                    est.save(update_fields=["autorizacion_firmada", "autorizacion_fecha"] if hasattr(est, "autorizacion_fecha") else ["autorizacion_firmada"])
+                # Al negar, aseguramos que el estudio quede sin autorización global
+                est.autorizacion_firmada = False
+                if hasattr(est, "autorizacion_fecha"):
+                    est.autorizacion_fecha = None
+                est.save(update_fields=["autorizacion_firmada", "autorizacion_fecha"] if hasattr(est, "autorizacion_fecha") else ["autorizacion_firmada"])
 
                 return Response({"ok": True})
 
-            # Si NO acepta:
-            cons.aceptado = False
-            cons.firma = None
-            cons.firmado_at = None
-            cons.user_agent = ua or None
-            cons.ip = ip or None
-            cons.save()
-            # Al negar, aseguramos que el estudio quede sin autorización global
-            est.autorizacion_firmada = False
-            if hasattr(est, "autorizacion_fecha"):
-                est.autorizacion_fecha = None
-            est.save(update_fields=["autorizacion_firmada", "autorizacion_fecha"] if hasattr(est, "autorizacion_fecha") else ["autorizacion_firmada"])
-
-            return Response({"ok": True})
     
-
 
 class EstudioItemViewSet(viewsets.ModelViewSet):
     queryset = EstudioItem.objects.all()
@@ -516,3 +522,194 @@ class EstudioItemViewSet(viewsets.ModelViewSet):
         item.save()
         item.estudio.recalcular()
         return Response({"ok": True}, status=status.HTTP_200_OK)
+
+class BaseRolMixin:
+    """
+    Reutiliza el mismo filtro por rol que ya aplicas en EstudioItemViewSet.
+    """
+    def filtrar_por_rol(self, qs):
+        user = self.request.user
+        rol = getattr(user, "rol", None)
+
+        if rol == "ADMIN":
+            return qs
+        if rol == "CLIENTE":
+            return qs.filter(estudio__solicitud__empresa=user.empresa)
+        if rol == "ANALISTA":
+            return qs.filter(estudio__solicitud__analista=user)
+        if rol == "CANDIDATO":
+            return qs.filter(estudio__solicitud__candidato__email=user.email)
+        return qs.none()
+
+    def validar_acceso_a_estudio(self, est: Estudio):
+        user = self.request.user
+        rol = getattr(user, "rol", None)
+
+        if rol == "ADMIN":
+            return
+        if rol == "CLIENTE" and est.solicitud.empresa == getattr(user, "empresa", None):
+            return
+        if rol == "ANALISTA" and est.solicitud.analista_id == getattr(user, "id", None):
+            return
+        if rol == "CANDIDATO" and est.solicitud.candidato.email == user.email:
+            return
+        raise ValidationError({"detail": ["No autorizado para este estudio."]})
+
+
+class AcademicoViewSet(BaseRolMixin, viewsets.ModelViewSet):
+    queryset = (
+        Academico.objects
+        .select_related(
+            "estudio",
+            "estudio__solicitud",
+            "estudio__solicitud__candidato",
+            "estudio__solicitud__empresa",
+            "estudio__solicitud__analista",
+        )
+    )
+    serializer_class = AcademicoSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+
+    def get_queryset(self):
+        # se mantiene el filtro por rol para listado
+        return self.filtrar_por_rol(super().get_queryset())
+
+    def get_object(self):
+        """
+        Evita 404 por queryset filtrado: busca por PK y luego valida permisos.
+        """
+        obj = (
+            Academico.objects
+            .select_related(
+                "estudio",
+                "estudio__solicitud",
+                "estudio__solicitud__candidato",
+            )
+            .get(pk=self.kwargs["pk"])
+        )
+        self.validar_acceso_a_estudio(obj.estudio)
+        return obj
+
+    def perform_create(self, serializer):
+        # (tu código actual tal cual, no lo toco)
+        ...
+
+    def perform_update(self, serializer):
+        """
+        Congela estudio/candidato para que no se intenten mover por error
+        y valida permisos sobre el estudio actual.
+        """
+        instance = serializer.instance
+        self.validar_acceso_a_estudio(instance.estudio)
+        serializer.save(estudio=instance.estudio, candidato=instance.candidato)
+
+    def perform_destroy(self, instance):
+        self.validar_acceso_a_estudio(instance.estudio)
+        return super().perform_destroy(instance)
+
+class AcademicoViewSet(BaseRolMixin, viewsets.ModelViewSet):
+    serializer_class = AcademicoSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+
+    # queryset base (con select_related útil)
+    queryset = (
+        Academico.objects.select_related(
+            "estudio",
+            "estudio__solicitud",
+            "estudio__solicitud__candidato",
+            "estudio__solicitud__empresa",
+            "estudio__solicitud__analista",
+        )
+    )
+
+    def get_queryset(self):
+        # mantén tu lógica de rol aquí (listado)
+        return self.filtrar_por_rol(super().get_queryset())
+
+    def get_object(self):
+        """
+        Evita el 404 de DRF por queryset filtrado: busca por PK
+        y luego valida acceso al estudio.
+        """
+        obj = (
+            Academico.objects.select_related(
+                "estudio",
+                "estudio__solicitud",
+                "estudio__solicitud__candidato",
+            ).get(pk=self.kwargs["pk"])
+        )
+        self.validar_acceso_a_estudio(obj.estudio)
+        return obj
+
+    def perform_create(self, serializer):
+        # (tu código actual SIN cambios)
+        est_id = self.request.data.get("estudio") or self.request.query_params.get("estudio")
+        est = None
+        if est_id:
+            try:
+                est = Estudio.objects.get(pk=est_id)
+            except Estudio.DoesNotExist:
+                raise ValidationError({"estudio": ["No existe."]})
+        else:
+            if getattr(self.request.user, "rol", None) == "CANDIDATO":
+                est = (
+                    Estudio.objects
+                    .filter(solicitud__candidato__email=self.request.user.email)
+                    .order_by("-solicitud__created_at")
+                    .first()
+                )
+            if not est:
+                raise ValidationError({"estudio": ["Este campo es requerido."]})
+
+        self.validar_acceso_a_estudio(est)
+        serializer.save(estudio=est, candidato=est.solicitud.candidato)
+
+    def perform_update(self, serializer):
+        """
+        Congela estudio/candidato al editar y valida acceso.
+        """
+        instance = serializer.instance
+        self.validar_acceso_a_estudio(instance.estudio)
+        serializer.save(estudio=instance.estudio, candidato=instance.candidato)
+
+    def perform_destroy(self, instance):
+        self.validar_acceso_a_estudio(instance.estudio)
+        return super().perform_destroy(instance)
+
+
+class LaboralViewSet(BaseRolMixin, viewsets.ModelViewSet):
+    queryset = Laboral.objects.all().select_related("estudio", "candidato")
+    serializer_class = LaboralSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        est_id = self.request.query_params.get("estudio")
+        if est_id:
+            qs = qs.filter(estudio_id=est_id)
+
+        # Si es candidato, solo los suyos
+        if getattr(self.request.user, "rol", None) == "CANDIDATO":
+            qs = qs.filter(candidato__email=self.request.user.email)
+        return qs
+
+    def perform_create(self, serializer):
+        est_id = self.request.data.get("estudio") or self.request.query_params.get("estudio")
+        est = None
+        if est_id:
+            try:
+                est = Estudio.objects.get(pk=est_id)
+            except Estudio.DoesNotExist:
+                raise ValidationError({"estudio": ["No existe."]})
+        else:
+            if getattr(self.request.user, "rol", None) == "CANDIDATO":
+                est = (
+                    Estudio.objects
+                    .filter(solicitud__candidato__email=self.request.user.email)
+                    .order_by("-solicitud__created_at")
+                    .first()
+                )
+            if not est:
+                raise ValidationError({"estudio": ["Este campo es requerido."]})
+
+        self.validar_acceso_a_estudio(est)
+        serializer.save(estudio=est, candidato=est.solicitud.candidato)
